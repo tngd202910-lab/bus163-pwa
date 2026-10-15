@@ -1,0 +1,16 @@
+BUS 163 PWA - HƯỚNG DẪN CÀI ĐẶT VÀ DÙNG NGOẠI TUYẾN
+
+Quan trọng: không mở index.html bằng cách nhấp đúp file. PWA và Service Worker cần được chạy từ một địa chỉ HTTPS (hoặc localhost).
+
+1) Sao lưu dữ liệu hiện tại: trong bản Bus 163 đang dùng, bấm “Xuất dữ liệu JSON”. Giữ file JSON ở nơi an toàn.
+2) Đưa toàn bộ các file trong thư mục này lên một máy chủ web HTTPS (ví dụ GitHub Pages hoặc dịch vụ hosting tĩnh có HTTPS). Không chỉ tải riêng index.html.
+3) Mở URL HTTPS trên máy tính, cho phép GPS nếu được hỏi. Nhập file JSON đã xuất. Kiểm tra cả chiều đi và chiều về, và để ứng dụng tính/lưu tuyến đường bộ khi còn mạng.
+4) Để chuẩn bị bản đồ ngoại tuyến: khi còn mạng, mở ứng dụng và di chuyển bản đồ qua toàn bộ khu vực tuyến ở các mức zoom bạn thường dùng. Các ô bản đồ Esri đã tải sẽ được lưu đệm trên thiết bị/trình duyệt. Chỉ những ô đã được tải mới chắc chắn xem lại được khi mất mạng. Không thể đảm bảo toàn bộ Hà Nội hoặc mọi mức zoom được lưu sẵn.
+5) Khi đã mở ứng dụng một lần trực tuyến, dùng chức năng cài đặt ứng dụng trên trình duyệt (Install app / Thêm vào màn hình chính). Sau đó thử bật chế độ máy bay: mở ứng dụng, kiểm tra tuyến đã lưu và GPS. GPS cần phần cứng hỗ trợ và quyền vị trí; một số trình duyệt có thể hạn chế định vị khi ngoại tuyến.
+6) Dữ liệu điểm dừng lưu trong bộ nhớ cục bộ của từng trình duyệt/địa chỉ. Không xóa dữ liệu trình duyệt; tiếp tục xuất JSON định kỳ. Nếu chuyển từ file HTML cũ sang URL HTTPS, hãy nhập JSON để khôi phục điểm dừng.
+
+Giới hạn hiện tại:
+- Tuyến đường bộ được lưu sau khi tính thành công; muốn tính lại tuyến mới cần Internet.
+- Bản đồ nền ngoại tuyến chỉ có các ô đã tải trước và được lưu đệm. Chưa có chức năng tải trọn vùng bản đồ bằng một nút.
+- Dữ liệu bản đồ Esri và các điều khoản/ghi công của nhà cung cấp vẫn áp dụng.
+- GPS có thể xác định vị trí mà không cần Internet trên thiết bị có GPS, nhưng máy tính để bàn thường không có GPS tích hợp; khả năng thực tế phụ thuộc thiết bị/trình duyệt.

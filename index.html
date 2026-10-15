@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#087cff">
+<meta name="description" content="Bản đồ điểm dừng Bus 163 Hà Nội, tuyến đường bộ và GPS ngoại tuyến.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Quản lý điểm dừng Bus 163 Hà Nội</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--blue:#087cff;--bg:#f2f2f7;--ink:#1c1c1e;--muted:#6e6e73;--line:#dedee3}
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);margin:0;padding:12px}
+header{max-width:1200px;margin:0 auto 12px}
+h1{font-size:22px;text-align:center;margin:8px 0}
+.subtitle{text-align:center;color:var(--muted);font-size:13px;margin-bottom:14px}
+.app{max-width:1200px;margin:auto}
+.card{background:#fff;border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 4px #00000012}
+.tabs,.toolbar,.actions{display:flex;gap:8px;flex-wrap:wrap}
+.tabs button{flex:1}
+button,.button{font:inherit;font-size:14px;border:0;border-radius:9px;padding:10px 12px;background:#e5e5ea;color:#222;cursor:pointer;min-height:40px}
+button:disabled{opacity:.35;cursor:not-allowed}
+button.primary{background:var(--blue);color:white;font-weight:600}
+button.green{background:#248a3d;color:white}
+button.red{background:#d92d20;color:white}
+button.active{background:var(--blue);color:#fff}
+input,select{width:100%;padding:11px;border:1px solid #c7c7cc;border-radius:9px;font:inherit;margin:5px 0 9px;background:#fff}
+label{font-size:13px;color:#444;display:block}
+#map{height: min(58vh,560px);min-height:320px;border-radius:11px;z-index:1}
+.layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.9fr);gap:12px;align-items:start}
+.map-controls{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.map-controls button{flex:1}
+.note{font-size:13px;color:var(--muted);line-height:1.5}
+.status{font-size:13px;padding:9px 10px;border-radius:8px;background:#f1f7ff;margin-top:8px;line-height:1.45}
+.counter{font-size:13px;color:var(--muted);margin-bottom:8px}
+ul{list-style:none;margin:0;padding:0}
+li.stop{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:7px;background:#fff}
+.stop-name{flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere}
+.stop-name small{display:block;color:var(--muted);font-size:11px;margin-top:3px}
+.stop-actions{display:flex;gap:4px;flex-wrap:wrap}
+.stop-actions button{padding:7px;min-width:34px;min-height:35px;font-size:13px}
+.stop.selected{border-color:var(--blue);background:#f0f7ff}
+#editPanel{display:none;border:1px solid #b8d7ff;background:#f5f9ff;padding:10px;border-radius:10px;margin-bottom:10px}
+.coord-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:420px){.coord-grid{grid-template-columns:1fr}}
+footer{max-width:1200px;margin:10px auto;color:var(--muted);font-size:12px;line-height:1.5}
+@media(max-width:800px){body{padding:8px}.layout{grid-template-columns:1fr}h1{font-size:19px}#map{height:48vh;min-height:300px}.card{padding:11px}.stop-actions button{min-width:32px}}
+</style>
+</head>
+<body>
+<header>
+<h1>Quản lý điểm dừng xe buýt 163</h1>
+<div class="subtitle">Bản đồ • Gắn tọa độ • GPS • Chiều đi và chiều về</div>
+<div class="tabs">
+<button id="btnDi" class="active" onclick="switchDirection('di')">Chiều đi</button>
+<button id="btnVe" onclick="switchDirection('ve')">Chiều về</button>
+</div>
+</header>
+
+<main class="app">
+<div class="layout">
+<section>
+<div class="card">
+<div id="routeTitle"><b>BX Yên Nghĩa ➜ Điểm trung chuyển Nhổn</b></div>
+<div id="map" aria-label="Bản đồ điểm dừng xe buýt"></div>
+<div class="map-controls">
+<button class="primary" onclick="locateGPS()">📍 Vị trí của tôi</button>
+<button id="watchBtn" onclick="toggleTracking()">▶ Theo dõi GPS</button>
+<button id="pinBtn" onclick="togglePinMode()">📌 Gắn tọa độ</button>
+<button onclick="fitRoute()">⤢ Xem toàn tuyến</button>
+</div>
+<div id="offlineStatus" class="status">Trạng thái ngoại tuyến: đang kiểm tra…</div>
+<div id="status" class="status">Đang tải bản đồ. Chọn một điểm dừng trong danh sách rồi bấm “Gắn tọa độ” để đặt mốc lên bản đồ.</div>
+<p class="note">Mẹo: bấm trực tiếp vào ghim để xem tên và tọa độ điểm dừng. Để gắn tọa độ: chọn điểm trong danh sách → bấm “Gắn tọa độ” → chạm vị trí trên bản đồ. Chỉ điểm đã có tọa độ mới hiện ghim.</p>
+</div>
+<div class="card">
+<b>Nhập / xuất dữ liệu</b>
+<p class="note">Dữ liệu được lưu trong trình duyệt của thiết bị này. Để chuyển dữ liệu giữa máy tính và điện thoại, hãy xuất file JSON ở máy này rồi nhập file đó trên thiết bị kia.</p>
+<div class="toolbar">
+<button onclick="exportData()">⬇ Xuất dữ liệu JSON</button>
+<button onclick="document.getElementById('importFile').click()">⬆ Nhập dữ liệu JSON</button>
+<input id="importFile" type="file" accept=".json,application/json" style="display:none" onchange="importData(event)">
+<button onclick="resetCurrentDirection()">Khôi phục danh sách gốc chiều này</button>
+</div>
+</div>
+</section>
+
+<section>
+<div class="card">
+<b>Thêm điểm dừng</b>
+<label for="stopName">Tên điểm dừng mới</label>
+<input id="stopName" placeholder="Ví dụ: Điểm dừng gần trường học">
+<button class="primary" style="width:100%" onclick="addStop()">＋ Thêm vào danh sách</button>
+</div>
+<div class="card">
+<div class="counter" id="stopCounter">Tổng số điểm dừng: 0</div>
+<div id="editPanel">
+<b>Chỉnh sửa điểm dừng</b>
+<label for="editName">Tên điểm dừng</label>
+<input id="editName">
+<div class="toolbar">
+<button class="green" onclick="saveEdit()">Lưu tên</button>
+<button onclick="cancelEdit()">Hủy</button>
+<button class="primary" onclick="armPinForEditing()">📍 Đặt / sửa tọa độ trên bản đồ</button>
+</div>
+<div class="note" id="coordinateText"></div>
+<div class="coord-grid">
+  <div><label for="editLat">Vĩ độ (Latitude)</label><input id="editLat" type="number" step="any" inputmode="decimal" placeholder="Ví dụ: 20.95"></div>
+  <div><label for="editLng">Kinh độ (Longitude)</label><input id="editLng" type="number" step="any" inputmode="decimal" placeholder="Ví dụ: 105.72"></div>
+</div>
+<div class="toolbar">
+  <button class="primary" onclick="saveCoordinates()">Lưu tọa độ nhập tay</button>
+  <button onclick="clearCoordinates()">Xóa tọa độ</button>
+</div>
+<p class="note">Có thể dán cặp tọa độ từ Google Maps. Ví dụ 21.028511, 105.804817 — số thứ nhất là vĩ độ, số thứ hai là kinh độ. Sau khi sửa, hãy xuất JSON để có bản sao lưu.</p>
+</div>
+<ul id="stopList"></ul>
+<button class="green" style="width:100%;margin-top:8px" onclick="saveData()">💾 Lưu thay đổi trên thiết bị</button>
+</div>
+</section>
+</div>
+</main>
+<footer>
+Ứng dụng PWA: khi cài và mở ít nhất một lần có mạng, ứng dụng lưu bộ khung và thư viện để mở lại ngoại tuyến. Các ô bản đồ chỉ dùng ngoại tuyến nếu đã được tải và lưu đệm trước đó; hãy mở/di chuyển qua khu vực tuyến ở các mức zoom cần dùng khi còn mạng. Tuyến đường bộ đã tính được lưu trên thiết bị để xem lại; tính lại tuyến cần Internet. GPS cần quyền vị trí và trình duyệt hỗ trợ. Dữ liệu điểm dừng lưu cục bộ; hãy thường xuyên xuất JSON. Ứng dụng không xác minh lộ trình chính thức của xe buýt 163.
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const defaultStopsDi = [
+"BX Yên Nghĩa","Ao làng Do Lộ","Đê Yên Nghĩa","Chợ cầu Mai Lĩnh","Trạm xăng Mai Lĩnh",
+"Nhà thờ Phượng Bãi","Kho Công ty TTI","Trường ĐHSP Thể dục Thể thao Hà Nội",
+"Nhà văn hóa Phượng Đồng","Trạm Y tế xã Phụng Châu","Trường THCS Phụng Châu",
+"Cửa hàng Vật tư Nông nghiệp Quý Luân","Doanh trại QĐND Việt Nam","Chùa Vô Vi",
+"Tổng kho Gạch ốp lát","UBND Xã Tiên Phương","Trường Tiểu học Tiên Phương (Khu B)",
+"Chùa Trăm Gian","Chùa Đọ","Trường THPT Cao Bá Quát","Sa lon tóc Mai Hương",
+"Miến dong làng So","Cổng làng So","Trường THCS Cộng Hòa","Nhà nghỉ Ngọc Anh 79 - Xóm 1 Đồng Lư",
+"Trường Tiểu học – THCS – THPT Nguyễn Trực L.N.I","Trường THCS Đồng Quang","Cổng làng Yên Nội",
+"Trường THPT Quốc Oai","Nhà máy nước Quốc Oai","Trường THCS Quốc Oai","Trước Trạm xăng Hoàng Xá",
+"KĐT Sunny Garden City","Ban Chỉ huy Quân sự xã Quốc Oai","Khu di tích lịch sử Chùa Thầy",
+"Xóm 3 Thụy Khuê – Sài Sơn","Qua cổng làng Phúc Đức","Thạch cao Sơn Trang",
+"Trường Mầm non Sài Sơn C","Cổng làng Trại Đường Cối","Bưu cục Quế Dương",
+"Trường THPT Vạn Xuân","Trạm điều khiển vệ tinh Quế Dương","Cây xăng Sơn Đồng",
+"Đồ thờ Hải Thoa – 173 Sơn Đồng","Trạm Y tế Sơn Đồng","Trường THPT Hoài Đức A",
+"Trung tâm GDNN – GDTX Hoài Đức","Trạm Y tế Đức Giang","Trường THCS Đức Giang",
+"UBND xã Hoài Đức","BX Hoài Đức","Lối rẽ Học viện KH Quân Sự","KĐT Kim Chung",
+"Đại học Thành Đô","Nghĩa trang liệt sĩ Kim Chung – Di Trạch","Phố Tu Hoàng",
+"Ga Nhổn","Điểm trung chuyển Nhổn"
+];
+const defaultStopsVe = [
+"Điểm trung chuyển Nhổn","Ga Nhổn","22 Phố Nhổn","Gaz Hà Nội","Đại học Thành Đô",
+"KĐT Kim Chung","Lối rẽ HV Khoa học Quân sự","Bưu điện Hoài Đức",
+"Qua Xí nghiệp Đầu tư Phát triển Thủy lợi Đan Hoài","Phòng Giao dịch Hoài Đức",
+"Trường THCS Đức Giang","Trạm Y tế Đức Giang","Trường Mầm non Đức Giang A",
+"Trường THPT Hoài Đức A","Trạm Y tế Sơn Đồng","Sa lon Tóc Mai Hoa",
+"Đồ thờ Phú Hoan","Trạm điều khiển vệ tinh Quế Dương","Trường THPT Vạn Xuân",
+"Công ty TNHH Kinh doanh Thương Mại và Dịch vụ An Lộc Việt Nam","Cổng làng Trại Đường Cối",
+"Trường Mầm non Sài Sơn C","Thạch cao Sơn Trang","Cổng làng Phúc Đức",
+"Xóm 1 Thụy Khuê – Sài Sơn","Xóm 3 Thụy Khuê – Sài Sơn","Khu di tích lịch sử Chùa Thầy",
+"Ban Chỉ huy Quân sự xã Quốc Oai","KĐT Sunny Garden City","Qua Trạm xăng Hoàng Xá",
+"Trường THCS Quốc Oai","UBND Thị trấn Quốc Oai","Trường THPT Quốc Oai",
+"Cổng làng Yên Nội","Trường THCS Đồng Quang","Trường Tiểu học – THCS – THPT Nguyễn Trực L.N.I",
+"Nhà Nghỉ Ngọc Anh 79 – Xóm 1 Đồng Lư","Trường THCS Cộng Hòa","Cổng làng So",
+"Miến dong làng So","Sa lon Tóc Mai Hương","Trường THPT Cao Bá Quát","Chùa Đọ",
+"Chùa Trăm Gian","Trường Tiểu học Tiên Phương (Khu B)","UBND Xã Tiên Phương",
+"Tổng kho Gạch ốp lát","Chùa Vô Vi","Doanh trại QĐND Việt Nam",
+"Cửa hàng Vật tư Nông nghiệp Quý Luân","Trường THCS Phụng Châu","UBND Xã Phụng Châu",
+"Nhà văn hóa Phượng Đồng","Trường ĐHSP Thể dục Thể thao Hà Nội","Kho Công ty TTI",
+"Nhà thờ Phượng Bãi","Trạm xăng Mai Lĩnh","Chợ cầu Mai Lĩnh","Cây xăng Đồng Mai",
+"Giếng cổ Do Lộ","BX Yên Nghĩa"
+];
+
+const STORE_KEY = 'bus163_map_data_v1';
+let currentDir = 'di', stops = [], editingIndex = null, selectedIndex = null;
+let pinMode = false, trackingId = null, gpsMarker = null, gpsCircle = null;
+let stopMarkers = [], routeLine = null, routeRequestId = 0;
+
+function makeStops(names){return names.map((name,i)=>({id:cryptoRandomId(),name,lat:null,lng:null}));}
+function cryptoRandomId(){return 's'+Date.now().toString(36)+Math.random().toString(36).slice(2,9);}
+function defaults(){return {di:makeStops(defaultStopsDi),ve:makeStops(defaultStopsVe)};}
+function readAll(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(STORE_KEY));
+    if(saved && Array.isArray(saved.di) && Array.isArray(saved.ve)){
+      for(const dir of ['di','ve']) saved[dir]=saved[dir].map(s=>({id:s.id||cryptoRandomId(),name:String(s.name||'Điểm dừng'),lat:Number.isFinite(s.lat)?s.lat:null,lng:Number.isFinite(s.lng)?s.lng:null}));
+      return saved;
+    }
+  }catch(e){}
+  // Migrate from the original app's saved name arrays if present.
+  try{
+    const di=JSON.parse(localStorage.getItem('bus163_stops_di'));
+    const ve=JSON.parse(localStorage.getItem('bus163_stops_ve'));
+    if(Array.isArray(di)||Array.isArray(ve)){
+      const d=defaults();
+      if(Array.isArray(di)) d.di=makeStops(di);
+      if(Array.isArray(ve)) d.ve=makeStops(ve);
+      return d;
+    }
+  }catch(e){}
+  return defaults();
+}
+let allData=readAll();
+function saveData(silent=false){
+  allData[currentDir]=stops;
+  try{
+    localStorage.setItem(STORE_KEY,JSON.stringify(allData));
+    // Keep compatibility with the previous file's saved name-only lists.
+    localStorage.setItem(currentDir==='di'?'bus163_stops_di':'bus163_stops_ve',JSON.stringify(stops.map(s=>s.name)));
+    setStatus('Đã lưu chiều '+(currentDir==='di'?'đi':'về')+' trên trình duyệt của thiết bị này.');
+    if(!silent) alert('Đã lưu. Dữ liệu hiện nằm trên thiết bị/trình duyệt này.');
+  }catch(e){alert('Không lưu được dữ liệu. Hãy kiểm tra dung lượng trình duyệt.');}
+}
+function setStatus(message){document.getElementById('status').textContent=message;}
+const map=L.map('map').setView([21.01,105.72],11);
+const streetLayer=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
+const imageryLayer=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery &copy; Esri'});
+const labelsLayer=L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Labels &copy; Esri'});
+streetLayer.addTo(map);
+L.control.layers({'Bản đồ đường phố':streetLayer,'Ảnh vệ tinh':imageryLayer},{'Tên địa điểm & địa giới':labelsLayer},{collapsed:true}).addTo(map);
+map.on('click',e=>{
+  if(!pinMode || selectedIndex===null){return;}
+  const s=stops[selectedIndex]; if(!s)return;
+  s.lat=Number(e.latlng.lat.toFixed(7));s.lng=Number(e.latlng.lng.toFixed(7));
+  pinMode=false;document.getElementById('pinBtn').classList.remove('active');
+  saveData(true);render();
+  setStatus('Đã gắn tọa độ cho “'+s.name+'”. Bạn có thể kéo mốc trên bản đồ để chỉnh chính xác hơn.');
+});
+function switchDirection(dir){
+  allData[currentDir]=stops;currentDir=dir;stops=allData[dir];editingIndex=null;selectedIndex=null;pinMode=false;
+  document.getElementById('btnDi').classList.toggle('active',dir==='di');
+  document.getElementById('btnVe').classList.toggle('active',dir==='ve');
+  document.getElementById('routeTitle').innerHTML=dir==='di'?'<b>BX Yên Nghĩa ➜ Điểm trung chuyển Nhổn (Chiều đi)</b>':'<b>Điểm trung chuyển Nhổn ➜ BX Yên Nghĩa (Chiều về)</b>';
+  document.getElementById('pinBtn').classList.remove('active');render();
+}
+function render(){
+  allData[currentDir]=stops;
+  document.getElementById('stopCounter').textContent=`Tổng số điểm dừng: ${stops.length} • Đã gắn tọa độ: ${stops.filter(s=>validCoord(s)).length}`;
+  const ul=document.getElementById('stopList');ul.replaceChildren();
+  stops.forEach((s,i)=>{
+    const li=document.createElement('li');li.className='stop'+(i===selectedIndex?' selected':'');
+    const info=document.createElement('div');info.className='stop-name';
+    const name=document.createElement('b');name.textContent=`${i+1}. ${s.name}`;info.appendChild(name);
+    const sub=document.createElement('small');sub.textContent=validCoord(s)?`${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}`:'Chưa có tọa độ';info.appendChild(sub);
+    const actions=document.createElement('div');actions.className='stop-actions';
+    const addBtn=(label,title,fn,disabled=false)=>{const b=document.createElement('button');b.textContent=label;b.title=title;b.disabled=disabled;b.onclick=fn;actions.appendChild(b);};
+    addBtn('📍','Chọn điểm',()=>selectStop(i));
+    addBtn('↑','Chuyển lên',()=>moveStop(i,-1),i===0);
+    addBtn('↓','Chuyển xuống',()=>moveStop(i,1),i===stops.length-1);
+    addBtn('Sửa','Sửa tên',()=>startEdit(i));
+    addBtn('✕','Xóa điểm',()=>deleteStop(i));
+    li.append(info,actions);ul.appendChild(li);
+  });
+  renderEditPanel();renderMarkers();
+}
+function validCoord(s){return Number.isFinite(s.lat)&&Number.isFinite(s.lng)&&s.lat>=-90&&s.lat<=90&&s.lng>=-180&&s.lng<=180;}
+function renderMarkers(){
+  stopMarkers.filter(Boolean).forEach(m=>map.removeLayer(m));stopMarkers=[];if(routeLine){map.removeLayer(routeLine);routeLine=null;}
+  const coords=[];
+  stops.forEach((s,i)=>{
+    if(!validCoord(s))return;
+    const icon=L.divIcon({className:'',html:`<div style="background:${i===selectedIndex?'#ff9500':'#087cff'};color:white;border:2px solid white;border-radius:50% 50% 50% 0;transform:rotate(-45deg);width:28px;height:28px;box-shadow:0 1px 5px #3338;display:flex;align-items:center;justify-content:center"><span style="transform:rotate(45deg);font-size:11px;font-weight:700">${i+1}</span></div>`,iconSize:[28,28],iconAnchor:[14,28]});
+    const marker=L.marker([s.lat,s.lng],{icon,draggable:true}).addTo(map);
+    marker.bindPopup(`<b>${i+1}. ${escapeHTML(s.name)}</b><br>${s.lat.toFixed(6)}, ${s.lng.toFixed(6)}`);
+    marker.on('click',()=>{selectedIndex=i;render();const selectedMarker=stopMarkers[i];if(selectedMarker){selectedMarker.openPopup();}setStatus('Đang xem điểm dừng: '+s.name);});
+    marker.on('dragend',ev=>{const p=ev.target.getLatLng();s.lat=Number(p.lat.toFixed(7));s.lng=Number(p.lng.toFixed(7));saveData(true);render();setStatus('Đã cập nhật tọa độ: '+s.name);});
+    stopMarkers[i]=marker;coords.push([s.lat,s.lng]);
+  });
+  if(coords.length>1)drawRoadRoute(coords);
+}
+function routeCacheKey(coords){return 'bus163_route_'+currentDir+'_'+coords.map(p=>p.map(v=>Number(v).toFixed(6)).join(',')).join(';');}
+async function drawRoadRoute(coords){
+  const requestId=++routeRequestId;
+  const cacheKey=routeCacheKey(coords);
+  const cachedRaw=localStorage.getItem(cacheKey);
+  if(!navigator.onLine){
+    if(cachedRaw){try{const cached=JSON.parse(cachedRaw);if(routeLine)map.removeLayer(routeLine);routeLine=L.polyline(cached.coords,{color:'#087cff',weight:5,opacity:.85}).addTo(map);setStatus(`Đang xem tuyến đường bộ đã lưu ngoại tuyến · khoảng ${cached.km} km. Muốn tính lại cần Internet.`);return;}catch(e){}}
+    if(routeLine){map.removeLayer(routeLine);routeLine=null;}
+    setStatus('Đang ngoại tuyến và chưa có tuyến đã lưu cho bộ tọa độ này. Hãy kết nối Internet để tính tuyến một lần.');return;
+  }
+  if(cachedRaw){try{const cached=JSON.parse(cachedRaw);if(routeLine)map.removeLayer(routeLine);routeLine=L.polyline(cached.coords,{color:'#087cff',weight:5,opacity:.85}).addTo(map);setStatus(`Đã tải tuyến đường bộ đã lưu · khoảng ${cached.km} km. Đang dùng dữ liệu đã lưu để giảm yêu cầu mạng.`);return;}catch(e){}}
+  setStatus('Đang tìm đường bộ giữa các điểm dừng…');
+  try{
+    const joined=coords.map(p=>`${p[1]},${p[0]}`).join(';');
+    const url=`https://router.project-osrm.org/route/v1/driving/${joined}?overview=full&geometries=geojson&steps=false&continue_straight=true`;
+    const response=await fetch(url);
+    if(!response.ok)throw new Error('Dịch vụ định tuyến không phản hồi');
+    const data=await response.json();
+    if(requestId!==routeRequestId)return;
+    if(data.code!=='Ok'||!data.routes||!data.routes.length)throw new Error('Không tìm được đường bộ cho toàn bộ các điểm');
+    const roadCoords=data.routes[0].geometry.coordinates.map(p=>[p[1],p[0]]);
+    const km=(data.routes[0].distance/1000).toFixed(1);
+    localStorage.setItem(cacheKey,JSON.stringify({coords:roadCoords,km,savedAt:new Date().toISOString()}));
+    if(routeLine)map.removeLayer(routeLine);
+    routeLine=L.polyline(roadCoords,{color:'#087cff',weight:5,opacity:.85}).addTo(map);
+    setStatus(`Đã tính và lưu tuyến đường bộ trên thiết bị · khoảng ${km} km. Tuyến đã lưu có thể xem lại khi ngoại tuyến; muốn tính lại cần Internet.`);
+  }catch(err){
+    if(requestId!==routeRequestId)return;
+    if(routeLine){map.removeLayer(routeLine);routeLine=null;}
+    setStatus('Chưa lấy được tuyến đường bộ. Kiểm tra kết nối mạng; các ghim và tọa độ vẫn được giữ nguyên.');
+  }
+}
+function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function selectStop(i){selectedIndex=i;editingIndex=null;render();const s=stops[i];if(validCoord(s)){map.setView([s.lat,s.lng],17);if(stopMarkers[i])stopMarkers[i].openPopup();setStatus('Đang xem điểm dừng: '+s.name);}else setStatus('Đã chọn “'+s.name+'”. Bấm “Gắn tọa độ” rồi chạm vị trí của điểm này trên bản đồ.');}
+function togglePinMode(){
+  if(selectedIndex===null){alert('Hãy bấm nút 📍 ở một điểm dừng trước.');return;}
+  pinMode=!pinMode;document.getElementById('pinBtn').classList.toggle('active',pinMode);
+  setStatus(pinMode?'Chế độ gắn tọa độ đang bật: hãy chạm đúng vị trí của “'+stops[selectedIndex].name+'” trên bản đồ.':'Đã tắt chế độ gắn tọa độ.');
+}
+function armPinForEditing(){if(editingIndex===null)return;selectedIndex=editingIndex;pinMode=true;document.getElementById('pinBtn').classList.add('active');setStatus('Chạm lên bản đồ để đặt tọa độ cho “'+stops[selectedIndex].name+'”.');document.getElementById('map').scrollIntoView({behavior:'smooth',block:'center'});}
+function startEdit(i){editingIndex=i;selectedIndex=i;render();document.getElementById('editName').focus();}
+function renderEditPanel(){
+ const p=document.getElementById('editPanel');
+ if(editingIndex===null||!stops[editingIndex]){p.style.display='none';return;}
+ const s=stops[editingIndex];p.style.display='block';document.getElementById('editName').value=s.name;
+ document.getElementById('coordinateText').textContent=validCoord(s)?`Tọa độ hiện tại: ${s.lat}, ${s.lng}`:'Điểm này chưa có tọa độ.';
+ document.getElementById('editLat').value=validCoord(s)?s.lat:'';
+ document.getElementById('editLng').value=validCoord(s)?s.lng:'';
+}
+function saveCoordinates(){
+ if(editingIndex===null){alert('Hãy bấm “Sửa” ở điểm dừng cần nhập tọa độ trước.');return;}
+ const latText=document.getElementById('editLat').value.trim();
+ const lngText=document.getElementById('editLng').value.trim();
+ if(latText===''||lngText===''){alert('Hãy nhập cả vĩ độ và kinh độ.');return;}
+ const lat=Number(latText),lng=Number(lngText);
+ if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat < -90||lat > 90||lng < -180||lng > 180){alert('Tọa độ không hợp lệ. Vĩ độ phải từ -90 đến 90; kinh độ từ -180 đến 180.');return;}
+ stops[editingIndex].lat=Number(lat.toFixed(7));stops[editingIndex].lng=Number(lng.toFixed(7));
+ selectedIndex=editingIndex;saveData(true);render();map.setView([lat,lng],17);
+ setStatus('Đã lưu tọa độ cho “'+stops[editingIndex].name+'”.');
+}
+function clearCoordinates(){
+ if(editingIndex===null)return;
+ if(!confirm('Xóa tọa độ của điểm dừng này?'))return;
+ stops[editingIndex].lat=null;stops[editingIndex].lng=null;
+ saveData(true);render();setStatus('Đã xóa tọa độ điểm dừng.');
+}
+function saveEdit(){if(editingIndex===null)return;const v=document.getElementById('editName').value.trim();if(!v){alert('Tên điểm dừng không được để trống.');return;}stops[editingIndex].name=v;saveData(true);render();}
+function cancelEdit(){editingIndex=null;render();}
+function addStop(){const input=document.getElementById('stopName'),v=input.value.trim();if(!v){alert('Vui lòng nhập tên điểm dừng.');return;}stops.push({id:cryptoRandomId(),name:v,lat:null,lng:null});input.value='';selectedIndex=stops.length-1;saveData(true);render();setStatus('Đã thêm điểm. Chọn 📍 cạnh điểm đó để gắn tọa độ.');}
+document.getElementById('stopName').addEventListener('keydown',e=>{if(e.key==='Enter')addStop();});
+function deleteStop(i){if(!confirm(`Xóa điểm dừng “${stops[i].name}”?`))return;stops.splice(i,1);if(editingIndex===i)editingIndex=null;else if(editingIndex>i)editingIndex--;if(selectedIndex===i)selectedIndex=null;else if(selectedIndex>i)selectedIndex--;saveData(true);render();}
+function moveStop(i,delta){const j=i+delta;if(j<0||j>=stops.length)return;[stops[i],stops[j]]=[stops[j],stops[i]];saveData(true);render();}
+function fitRoute(){const points=stops.filter(validCoord).map(s=>[s.lat,s.lng]);if(points.length)map.fitBounds(points,{padding:[25,25],maxZoom:15});else{map.setView([21.01,105.72],11);setStatus('Chưa có điểm dừng nào được gắn tọa độ. Hãy đặt mốc trước.');}}
+function locateGPS(){
+ if(!navigator.geolocation){setStatus('Trình duyệt không hỗ trợ định vị.');return;}
+ setStatus('Đang lấy vị trí GPS… Hãy cho phép trình duyệt truy cập vị trí.');
+ navigator.geolocation.getCurrentPosition(pos=>{
+  const lat=pos.coords.latitude,lng=pos.coords.longitude,acc=pos.coords.accuracy;
+  if(gpsMarker)map.removeLayer(gpsMarker);if(gpsCircle)map.removeLayer(gpsCircle);
+  gpsMarker=L.circleMarker([lat,lng],{radius:8,color:'#fff',weight:3,fillColor:'#1677ff',fillOpacity:1}).addTo(map).bindPopup('Vị trí GPS hiện tại').openPopup();
+  gpsCircle=L.circle([lat,lng],{radius:acc,color:'#1677ff',weight:1,fillOpacity:.08}).addTo(map);
+  map.setView([lat,lng],17);setStatus(`Đã lấy vị trí GPS. Độ chính xác thiết bị báo khoảng ${Math.round(acc)} m. Độ chính xác thực tế có thể thay đổi.`);
+ },err=>{const messages={1:'Bạn chưa cấp quyền vị trí. Hãy bật quyền Location cho trình duyệt.',2:'Thiết bị chưa xác định được vị trí. Hãy thử ở nơi thoáng hơn.',3:'Lấy GPS quá lâu. Hãy thử lại.'};setStatus(messages[err.code]||'Không lấy được vị trí GPS.');},{enableHighAccuracy:true,timeout:15000,maximumAge:5000});
+}
+function toggleTracking(){
+ if(trackingId!==null){navigator.geolocation.clearWatch(trackingId);trackingId=null;document.getElementById('watchBtn').textContent='▶ Theo dõi GPS';setStatus('Đã dừng theo dõi GPS.');return;}
+ if(!navigator.geolocation){setStatus('Trình duyệt không hỗ trợ định vị.');return;}
+ trackingId=navigator.geolocation.watchPosition(pos=>{
+  const lat=pos.coords.latitude,lng=pos.coords.longitude,acc=pos.coords.accuracy;
+  if(gpsMarker)map.removeLayer(gpsMarker);if(gpsCircle)map.removeLayer(gpsCircle);
+  gpsMarker=L.circleMarker([lat,lng],{radius:8,color:'#fff',weight:3,fillColor:'#1677ff',fillOpacity:1}).addTo(map).bindPopup('Vị trí GPS hiện tại');
+  gpsCircle=L.circle([lat,lng],{radius:acc,color:'#1677ff',weight:1,fillOpacity:.06}).addTo(map);
+  map.panTo([lat,lng]);
+   setStatus(`Đang theo dõi GPS • độ chính xác thiết bị báo khoảng ${Math.round(acc)} m. Bản đồ đang theo vị trí của bạn.`);
+ },err=>{setStatus('Không theo dõi được GPS. Kiểm tra quyền vị trí và HTTPS.');navigator.geolocation.clearWatch(trackingId);trackingId=null;document.getElementById('watchBtn').textContent='▶ Theo dõi GPS';},{enableHighAccuracy:true,maximumAge:3000,timeout:15000});
+ document.getElementById('watchBtn').textContent='■ Dừng theo dõi';
+}
+function exportData(){
+ allData[currentDir]=stops;
+ const blob=new Blob([JSON.stringify({app:'Bus163',version:1,exportedAt:new Date().toISOString(),data:allData},null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='bus163-du-lieu.json';a.click();URL.revokeObjectURL(url);
+ setStatus('Đã xuất dữ liệu. Hãy chuyển file bus163-du-lieu.json sang thiết bị còn lại.');
+}
+function importData(event){
+ const file=event.target.files[0];if(!file)return;
+ const reader=new FileReader();
+ reader.onload=()=>{
+  try{
+   const parsed=JSON.parse(reader.result),data=parsed.data||parsed;
+   for(const dir of ['di','ve']){
+    if(!Array.isArray(data[dir]))throw new Error('Thiếu danh sách '+dir);
+    data[dir]=data[dir].map(s=>({id:s.id||cryptoRandomId(),name:String(s.name||'Điểm dừng'),lat:Number.isFinite(s.lat)?s.lat:null,lng:Number.isFinite(s.lng)?s.lng:null}));
+   }
+   if(!confirm('Nhập dữ liệu sẽ thay thế danh sách chiều đi và chiều về hiện tại trên thiết bị này. Tiếp tục?'))return;
+   allData=data;stops=allData[currentDir];editingIndex=null;selectedIndex=null;saveData(true);render();setStatus('Đã nhập dữ liệu từ file.');
+  }catch(e){alert('File không hợp lệ hoặc không phải dữ liệu Bus 163.');}
+  finally{event.target.value='';}
+ };
+ reader.readAsText(file);
+}
+function resetCurrentDirection(){
+ if(!confirm('Khôi phục danh sách tên gốc của chiều '+(currentDir==='di'?'đi':'về')+'? Tất cả tọa độ đã gắn cho chiều này sẽ bị xóa.'))return;
+ stops=makeStops(currentDir==='di'?defaultStopsDi:defaultStopsVe);allData[currentDir]=stops;editingIndex=null;selectedIndex=null;saveData(true);render();setStatus('Đã khôi phục danh sách gốc. Các điểm cần được gắn tọa độ lại.');
+}
+function loadDirection(){stops=allData[currentDir];render();}
+loadDirection();
+setTimeout(()=>map.invalidateSize(),250);
+function updateOfflineStatus(){
+ const el=document.getElementById('offlineStatus');
+ if(!el)return;
+ el.textContent=navigator.onLine?'Đang trực tuyến. Bản đồ bạn đã xem có thể được lưu đệm để dùng lại ngoại tuyến.':'Đang ngoại tuyến. Các ô bản đồ chưa tải trước có thể không hiện; tuyến đường đã lưu vẫn có thể xem.';
+}
+window.addEventListener('online',updateOfflineStatus);window.addEventListener('offline',updateOfflineStatus);updateOfflineStatus();
+if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
+ window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').then(()=>{
+   if(navigator.serviceWorker.controller)document.getElementById('offlineStatus').textContent += ' Bộ nhớ ngoại tuyến đã sẵn sàng.';
+ }).catch(()=>{document.getElementById('offlineStatus').textContent='Không đăng ký được bộ nhớ ngoại tuyến. Hãy mở ứng dụng từ một địa chỉ HTTPS.';}));
+} else {
+ document.getElementById('offlineStatus').textContent='Để cài PWA và lưu bộ khung ngoại tuyến, cần mở ứng dụng từ HTTPS (không phải mở file HTML trực tiếp).';
+}
+</script>
+</body>
+</html>

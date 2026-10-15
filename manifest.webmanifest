@@ -1,0 +1,22 @@
+{
+  "name": "Bus 163 Hà Nội",
+  "short_name": "Bus 163",
+  "description": "Điểm dừng, tuyến đường bộ và GPS Bus 163",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f2f7",
+  "theme_color": "#087cff",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
