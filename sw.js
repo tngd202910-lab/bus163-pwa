@@ -1,33 +1,151 @@
-const CACHE_NAME = 'bus163-shell-v1';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'];
+
+const CACHE_NAME = 'bus163-shell-v2';
+const TILE_CACHE = 'bus163-tiles-v1';
+
+const SHELL = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './icon-192.png',
+  './icon-512.png'
+];
+
+const LEAFLET_FILES = [
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+];
+
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL.map(url => new Request(url, {mode: url.startsWith('http') ? 'no-cors' : 'same-origin'}))).catch(()=>{})));
-  self.skipWaiting();
-});
-self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('bus163-') && k !== CACHE_NAME && k !== 'bus163-tiles-v1').map(k => caches.delete(k)))));
-  self.clients.claim();
-});
-self.addEventListener('fetch', event => {
-  const req = event.request;
-  if (req.method !== 'GET') return;
-  const url = new URL(req.url);
-  const isTile = url.hostname.includes('arcgisonline.com') && url.pathname.includes('/tile/');
-  if (isTile) {
-    event.respondWith(caches.open('bus163-tiles-v1').then(async cache => {
-      const cached = await cache.match(req);
-      if (cached) return cached;
-      try { const response = await fetch(req); if (response && (response.ok || response.type === 'opaque')) cache.put(req, response.clone()); return response; }
-      catch (e) { return new Response('', {status: 503, statusText: 'Tile not cached for offline use'}); }
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+
+    // Các tệp của ứng dụng phải được lưu trước.
+    await cache.addAll(SHELL);
+
+    // Thử lưu Leaflet riêng, không để lỗi CDN
+    // làm hỏng toàn bộ quá trình cài đặt.
+    await Promise.all(LEAFLET_FILES.map(async url => {
+      try {
+        const response = await fetch(url);
+        if (response.ok) {
+          await cache.put(url, response);
+        }
+      } catch (error) {
+        // Sẽ thử tải lại khi có mạng.
+      }
     }));
+
+    await self.skipWaiting();
+  })());
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+
+    await Promise.all(keys
+      .filter(key =>
+        key.startsWith('bus163-shell-') &&
+        key !== CACHE_NAME
+      )
+      .map(key => caches.delete(key)));
+
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('fetch', event => {
+  const request = event.request;
+
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+
+  // Lưu các ô bản đồ ArcGIS đã xem khi có mạng.
+  const isTile =
+    url.hostname.includes('arcgisonline.com') &&
+    url.pathname.includes('/tile/');
+
+  if (isTile) {
+    event.respondWith((async () => {
+      const cache = await caches.open(TILE_CACHE);
+      const saved = await cache.match(request);
+
+      if (saved) return saved;
+
+      try {
+        const response = await fetch(request);
+
+        if (response.ok || response.type === 'opaque') {
+          await cache.put(request, response.clone());
+        }
+
+        return response;
+      } catch (error) {
+        return new Response(
+          'Ô bản đồ chưa được lưu để dùng ngoại tuyến.',
+          { status: 503 }
+        );
+      }
+    })());
     return;
   }
-  if (url.hostname === 'router.project-osrm.org') return; // route geometry is stored by the app after successful calculation
+
+  // Leaflet: ưu tiên bản đã lưu.
   if (url.hostname === 'unpkg.com') {
-    event.respondWith(caches.match(req).then(cached => cached || fetch(req).then(response => { if (response && (response.ok || response.type==='opaque')) caches.open(CACHE_NAME).then(cache=>cache.put(req,response.clone())); return response; }).catch(()=>new Response('',{status:503}))));
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const saved = await cache.match(request);
+
+      if (saved) return saved;
+
+      try {
+        const response = await fetch(request);
+
+        if (response.ok) {
+          await cache.put(request, response.clone());
+        }
+
+        return response;
+      } catch (error) {
+        return new Response(
+          'Thư viện Leaflet chưa được lưu ngoại tuyến.',
+          { status: 503 }
+        );
+      }
+    })());
     return;
   }
+
+  // Không chặn dịch vụ tìm đường OSRM.
+  if (url.hostname === 'router.project-osrm.org') return;
+
+  // Các tệp cùng nguồn: ưu tiên cache khi mất mạng.
   if (url.origin === self.location.origin) {
-    event.respondWith(caches.match(req).then(cached => cached || fetch(req).then(response => { if(response.ok) caches.open(CACHE_NAME).then(cache=>cache.put(req,response.clone())); return response; }).catch(()=>caches.match('./index.html'))));
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const saved = await cache.match(request);
+
+      if (saved) return saved;
+
+      try {
+        const response = await fetch(request);
+
+        if (response.ok) {
+          await cache.put(request, response.clone());
+        }
+
+        return response;
+      } catch (error) {
+        if (request.mode === 'navigate') {
+          return (await cache.match('./index.html')) ||
+                 (await cache.match('./'));
+        }
+
+        return new Response('Không có tài nguyên ngoại tuyến.', {
+          status: 503
+        });
+      }
+    })());
   }
 });
